@@ -357,7 +357,7 @@ export function Sidebar() {
               </motion.div>
               <div className="min-w-0">
                 <p className="text-[15px] font-semibold text-sidebar-foreground tracking-tight leading-none">
-                  LibraryOS
+                  LibraFlow
                 </p>
                 <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-sidebar-foreground/35 leading-none">
                   Management
@@ -494,7 +494,7 @@ export function MobileSidebar() {
                 </motion.div>
                 <div>
                   <p className="text-[15px] font-semibold text-sidebar-foreground tracking-tight leading-none">
-                    LibraryOS
+                    LibraFlow
                   </p>
                   <p className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] text-sidebar-foreground/35 leading-none">
                     Management

@@ -1,5 +1,5 @@
 /**
- * Core API client for the LibraryOS backend.
+ * Core API client for the LibraFlow backend.
  *
  * Design decisions:
  *  - Native fetch (no axios) — keeps the bundle small and avoids a dependency.

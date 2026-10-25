@@ -76,6 +76,21 @@ async function parseAuthError(res: Response): Promise<AuthError> {
 // ─── Auth API ─────────────────────────────────────────────────────────────────
 
 export const authService = {
+  /**
+   * Which sign-in methods this deployment supports. Google is optional on the
+   * backend; the UI hides its button when it isn't configured. Fails closed
+   * (password-only) if the call errors.
+   */
+  async getProviders(): Promise<{ password: boolean; google: boolean }> {
+    try {
+      const res = await fetch(`${BASE_URL}/api/v1/auth/providers`, { cache: "no-store" })
+      if (!res.ok) return { password: true, google: false }
+      const body = await res.json()
+      return { password: true, google: body?.data?.google === true }
+    } catch {
+      return { password: true, google: false }
+    }
+  },
   async login(payload: LoginPayload): Promise<AuthUser> {
     const res = await fetch(`${BASE_URL}/api/v1/auth/login`, {
       method: "POST",

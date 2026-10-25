@@ -47,7 +47,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/30">
               <Library className="h-5 w-5 text-primary-foreground" />
             </div>
-            <span className="text-lg font-bold tracking-tight text-foreground">LibraryOS</span>
+            <span className="text-lg font-bold tracking-tight text-foreground">LibraFlow</span>
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Footer */}
         <div className="relative z-10">
           <p className="text-xs text-muted-foreground/50">
-            © {new Date().getFullYear()} LibraryOS. All rights reserved.
+            © {new Date().getFullYear()} LibraFlow. All rights reserved.
           </p>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary shadow-lg shadow-primary/30">
               <Library className="h-4 w-4 text-primary-foreground" />
             </div>
-            <span className="text-base font-bold tracking-tight text-foreground">LibraryOS</span>
+            <span className="text-base font-bold tracking-tight text-foreground">LibraFlow</span>
           </div>
         </div>
 
@@ -115,7 +115,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         {/* Mobile footer */}
         <div className="flex lg:hidden justify-center pb-6 px-6">
           <p className="text-xs text-muted-foreground/50 text-center">
-            © {new Date().getFullYear()} LibraryOS. All rights reserved.
+            © {new Date().getFullYear()} LibraFlow. All rights reserved.
           </p>
         </div>
       </div>

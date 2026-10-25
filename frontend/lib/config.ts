@@ -19,7 +19,7 @@ export const config: EnvironmentConfig = {
   apiUrl: "",
   
   // Application Metadata
-  appName: process.env.NEXT_PUBLIC_APP_NAME || "Library Management System",
+  appName: process.env.NEXT_PUBLIC_APP_NAME || "LibraFlow",
   appVersion: process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0",
   
   // Environment Flags

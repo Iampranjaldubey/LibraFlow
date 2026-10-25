@@ -43,7 +43,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </AuthProvider>
           </ThemeProvider>
         </ErrorBoundary>
-        {config.isProduction && <Analytics />}
+        {/* Vercel Analytics only exists on Vercel; elsewhere (Docker) its script 404s. */}
+        {config.isProduction && process.env.VERCEL === "1" && <Analytics />}
       </body>
     </html>
   )

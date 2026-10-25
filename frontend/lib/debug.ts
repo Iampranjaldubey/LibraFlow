@@ -1,5 +1,5 @@
 /**
- * Browser-console debugging helpers for LibraryOS API integration.
+ * Browser-console debugging helpers for LibraFlow API integration.
  *
  * Usage (paste into browser DevTools console):
  *
@@ -121,7 +121,7 @@ async function testTransactionsEndpoint(): Promise<{
 // ─── Main diagnostic runner ───────────────────────────────────────────────────
 
 export async function runDiagnostics() {
-  console.group("%c🔍 LibraryOS API Diagnostics", "font-size:14px;font-weight:bold;color:#22c55e")
+  console.group("%c🔍 LibraFlow API Diagnostics", "font-size:14px;font-weight:bold;color:#22c55e")
   console.log("Backend URL:", BASE_URL)
 
   // 1. Token
@@ -222,7 +222,7 @@ if (
 ) {
   ;(window as any).__libraryDebug = { run: runDiagnostics }
   console.info(
-    "%c[LibraryOS] Debug helper ready — run window.__libraryDebug.run() in the console",
+    "%c[LibraFlow] Debug helper ready — run window.__libraryDebug.run() in the console",
     "color:#6366f1;font-size:11px"
   )
 }

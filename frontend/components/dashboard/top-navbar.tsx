@@ -33,8 +33,8 @@ function Breadcrumb() {
         transition={{ duration: 0.2 }}
         className="flex items-center gap-2 text-sm select-none"
       >
-        {/* Desktop: full breadcrumb with "LibraryOS /" prefix */}
-        <span className="hidden lg:inline text-muted-foreground/60 font-medium">LibraryOS</span>
+        {/* Desktop: full breadcrumb with "LibraFlow /" prefix */}
+        <span className="hidden lg:inline text-muted-foreground/60 font-medium">LibraFlow</span>
         <span className="hidden lg:inline text-muted-foreground/30">/</span>
 
         {/* Both mobile + desktop: current page name */}
