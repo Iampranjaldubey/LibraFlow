@@ -2,36 +2,62 @@
 # Docs: https://render.com/docs/blueprint-spec
 #
 # The database is NOT defined here: Render's free managed DB is Postgres-only,
-# so use an external free MySQL (e.g. Aiven) and paste its connection details
-# into the DB_* env vars below. See the README "Deploy for free" section.
+# so use an external MySQL (e.g. Aiven free tier) and paste its connection
+# details into the DB_* env vars. The frontend deploys to Vercel and proxies
+# /api, /oauth2 and /login/oauth2 to this service. See docs/DEPLOYMENT.md.
 
 services:
   - type: web
-    name: libraryos-api
+    name: libraflow-api
     runtime: docker
     plan: free
     region: oregon
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
-    healthCheckPath: /api/v1/health
+    # Readiness = app up AND MySQL reachable; Render only routes traffic to a
+    # new deploy once this passes (zero-downtime deploys).
+    healthCheckPath: /actuator/health/readiness
     autoDeploy: true
     envVars:
-      # ── Secrets: set these in the Render dashboard (not committed) ──
-      - key: DB_URL          # e.g. jdbc:mysql://<host>:<port>/<db>?ssl-mode=REQUIRED
+      # ── Secrets: set in the Render dashboard (never committed) ──
+      - key: DB_URL              # jdbc:mysql://<host>:<port>/<db>?sslMode=REQUIRED
         sync: false
       - key: DB_USERNAME
         sync: false
       - key: DB_PASSWORD
         sync: false
-      - key: JWT_SECRET      # Base64, decodes to >= 32 bytes: openssl rand -base64 48
+      - key: JWT_SECRET          # openssl rand -base64 48
+        generateValue: true
+      - key: FRONTEND_URL        # https://<your-app>.vercel.app — CORS, email links, OAuth redirects
         sync: false
-      - key: FRONTEND_URL    # https://<your-app>.vercel.app  (used for email links)
-        sync: false
-      # ── Refresh-token cookie (works with the Vercel same-origin proxy) ──
+
+      # ── Refresh-token cookie ──
+      # The browser reaches the API same-origin through the Vercel proxy, so the
+      # cookie is first-party: Lax is sufficient and stricter than None.
       - key: REFRESH_COOKIE_SECURE
         value: "true"
       - key: REFRESH_COOKIE_SAMESITE
-        value: "None"
-      # ── Demo-friendly: allow login without SMTP. Set "true" + MAIL_* for real email. ──
+        value: "Lax"
+
+      # ── Public demo instance ──
+      # Seeds admin@/librarian@/member@libraflow.dev + sample books. Turn off
+      # for an instance with real users.
+      - key: APP_DEMO_SEED
+        value: "true"
+      - key: APP_DEMO_PASSWORD
+        sync: false
+      # No SMTP on the free demo; set "true" and configure MAIL_* for real email.
       - key: APP_AUTH_REQUIRE_EMAIL_VERIFICATION
         value: "false"
+
+      # ── Optional Google login (leave unset to disable) ──
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI # https://<your-app>.vercel.app/login/oauth2/code/google
+        sync: false
+
+      # 512 MB free instance: cap heap so the JVM leaves room for metaspace/threads.
+      - key: JAVA_OPTS
+        value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseSerialGC"

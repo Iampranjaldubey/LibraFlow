@@ -22,5 +22,17 @@ USER spring
 
 COPY --from=build --chown=spring:spring /app/target/library-management.jar app.jar
 
+# Container-aware JVM defaults: size the heap from the container memory limit
+# (free tiers are ~512 MB), crash fast on OOM so the platform restarts us
+# instead of limping along, and use a fast entropy source for startup.
+# Override per environment with JAVA_OPTS.
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+
+# Readiness = app up AND database reachable (Spring Boot Actuator).
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+  CMD curl -fsS "http://localhost:${PORT:-8080}/actuator/health/readiness" || exit 1
+
+# `exec` makes the JVM PID 1 so it receives SIGTERM directly -> graceful shutdown.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

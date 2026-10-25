@@ -1,30 +1,35 @@
-# One-command local stack: MySQL + Spring Boot backend.
+# Full LibraFlow stack in one command: MySQL 8 + Spring Boot API + Next.js UI.
 #
-# NOTE: the credentials below are throwaway LOCAL-DEV values only.
-# Never reuse them in staging/production — inject real secrets via the
-# environment there. This file exists so a reviewer can run:
-#
+#     cp .env.example .env      # optional — every value has a local default
 #     docker compose up --build
 #
-# and get a working API at http://localhost:8080/swagger-ui.html
+#   App:      http://localhost:3000   (demo logins below)
+#   API docs: http://localhost:8080/swagger-ui.html
+#
+# Demo accounts (APP_DEMO_SEED=true): admin@libraflow.dev, librarian@libraflow.dev,
+# member@libraflow.dev — password = APP_DEMO_PASSWORD (default: LibraFlow@2026).
+#
+# The defaults below are throwaway LOCAL values. In any shared environment set
+# real secrets via .env or your platform's secret store.
+name: libraflow
+
 services:
   db:
     image: mysql:8.0
-    container_name: libraryos-db
+    container_name: libraflow-db
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: library_db
-      MYSQL_USER: library_user
-      MYSQL_PASSWORD: library_pass
-      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_USER: ${DB_USERNAME:-library_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-library_pass}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
     ports:
-      # Host 3307 -> container 3306 to avoid clashing with a local MySQL on 3306.
-      # The backend connects internally via db:3306, so this only affects host access.
-      - "3307:3306"
+      # Host 3307 -> container 3306 to avoid clashing with a local MySQL.
+      - "127.0.0.1:3307:3306"
     volumes:
       - db_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_pass"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -32,21 +37,49 @@ services:
   backend:
     build:
       context: ./backend
-    container_name: libraryos-backend
+    container_name: libraflow-backend
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       DB_URL: "jdbc:mysql://db:3306/library_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true"
-      DB_USERNAME: library_user
-      DB_PASSWORD: library_pass
-      JWT_SECRET: "dGhpc2lzYXZlcnlzdHJvbmdzZWNyZXRrZXlmb3JsaWJyYXJ5bWFuYWdlbWVudHN5c3RlbTIwMjQ="
+      DB_USERNAME: ${DB_USERNAME:-library_user}
+      DB_PASSWORD: ${DB_PASSWORD:-library_pass}
+      JWT_SECRET: ${JWT_SECRET:-dGhpc2lzYXZlcnlzdHJvbmdzZWNyZXRrZXlmb3JsaWJyYXJ5bWFuYWdlbWVudHN5c3RlbTIwMjQ=}
       PORT: "8080"
-      # Local dev only: allow login without SMTP email verification.
-      APP_AUTH_REQUIRE_EMAIL_VERIFICATION: "false"
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      # Browser traffic is same-origin through the Next.js proxy over plain HTTP
+      # locally, so the refresh cookie must not require HTTPS here.
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      REFRESH_COOKIE_SAMESITE: ${REFRESH_COOKIE_SAMESITE:-Lax}
+      # No SMTP locally: allow login without email verification.
+      APP_AUTH_REQUIRE_EMAIL_VERIFICATION: ${APP_AUTH_REQUIRE_EMAIL_VERIFICATION:-false}
+      APP_DEMO_SEED: ${APP_DEMO_SEED:-true}
+      APP_DEMO_PASSWORD: ${APP_DEMO_PASSWORD:-LibraFlow@2026}
+      RATE_LIMIT_AUTH_CAPACITY: ${RATE_LIMIT_AUTH_CAPACITY:-10}
+      RATE_LIMIT_AUTH_REFILL_PER_MINUTE: ${RATE_LIMIT_AUTH_REFILL_PER_MINUTE:-10}
+      # Google login is optional — leave blank to disable (the button hides itself).
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:3000/login/oauth2/code/google}
+      JAVA_OPTS: "-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError"
     ports:
       - "8080:8080"
+    # Healthcheck (actuator readiness incl. DB) is defined in backend/Dockerfile.
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        BACKEND_API_URL: http://backend:8080
+    container_name: libraflow-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
 
 volumes:
   db_data:

@@ -83,10 +83,48 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:8080
 
   docker:
-    name: Docker · backend image builds
+    name: Docker · images build · full-stack smoke test
     runs-on: ubuntu-latest
+    needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build backend image
-        run: docker build -t libraryos-backend:ci ./backend
+      # Builds db + backend + frontend images and waits until every container's
+      # healthcheck passes (backend readiness includes the DB connection).
+      - name: Start full stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          F=http://localhost:3000
+          check() { test "$2" = "$3" || { echo "FAIL $1: expected $3 got $2"; exit 1; }; echo "ok   $1"; }
+
+          check "readiness probe" "$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/actuator/health/readiness)" 200
+          check "login page"      "$(curl -s -o /dev/null -w '%{http_code}' $F/login)" 200
+          check "dashboard gated" "$(curl -s -o /dev/null -w '%{http_code}' $F/dashboard)" 307
+          curl -sI $F/login | grep -qi '^content-security-policy:' && echo "ok   CSP header"
+
+          # Demo admin logs in through the same-origin proxy; refresh token only in a cookie
+          BODY=$(curl -s -c cj -X POST $F/api/v1/auth/login -H 'Content-Type: application/json' \
+                  -d '{"email":"admin@libraflow.dev","password":"LibraFlow@2026"}')
+          TOKEN=$(echo "$BODY" | jq -r .data.token)
+          check "demo admin role"  "$(echo "$BODY" | jq -r .data.role)" ADMIN
+          check "no token in body" "$(echo "$BODY" | jq -r '.data.refreshToken // "absent"')" absent
+          grep -q refresh_token cj && echo "ok   refresh cookie set"
+          check "seeded books"     "$(curl -s -H "Authorization: Bearer $TOKEN" $F/api/v1/books | jq '.data | length')" 12
+          check "refresh rotation" "$(curl -s -b cj -o /dev/null -w '%{http_code}' -X POST $F/api/v1/auth/refresh)" 200
+
+          # Rate limiter: default burst is 10, so the 11th bad login must be 429
+          for i in $(seq 1 10); do curl -s -o /dev/null -X POST $F/api/v1/auth/login \
+            -H 'Content-Type: application/json' -d '{"email":"x@y.dev","password":"wrongpass1"}'; done
+          check "rate limit" "$(curl -s -o /dev/null -w '%{http_code}' -X POST $F/api/v1/auth/login \
+            -H 'Content-Type: application/json' -d '{"email":"x@y.dev","password":"wrongpass1"}')" 429
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
