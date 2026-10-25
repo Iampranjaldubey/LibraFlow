@@ -20,7 +20,7 @@ public class EmailServiceImpl implements EmailService {
 
     private final JavaMailSender mailSender;
 
-    @Value("${app.mail.from:noreply@libraryos.com}")
+    @Value("${app.mail.from:noreply@libraflow.dev}")
     private String fromEmail;
 
     @Value("${app.frontend-url:http://localhost:3000}")
@@ -30,12 +30,12 @@ public class EmailServiceImpl implements EmailService {
     @Async
     public void sendVerificationEmail(User user, String token) {
         String verifyUrl = frontendUrl + "/verify-email?token=" + token;
-        String subject = "Verify your email — LibraryOS";
+        String subject = "Verify your email — LibraFlow";
         String body = """
                 <html>
                 <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 20px;">
                   <div style="max-width: 500px; margin: 0 auto; background: #f8f9fa; border-radius: 12px; padding: 32px;">
-                    <h2 style="color: #1a1a2e; margin-bottom: 16px;">Welcome to LibraryOS!</h2>
+                    <h2 style="color: #1a1a2e; margin-bottom: 16px;">Welcome to LibraFlow!</h2>
                     <p style="color: #555; line-height: 1.6;">
                       Hi <strong>%s</strong>, thanks for registering. Please verify your email address
                       by clicking the button below:
@@ -63,7 +63,7 @@ public class EmailServiceImpl implements EmailService {
     @Async
     public void sendPasswordResetEmail(User user, String token) {
         String resetUrl = frontendUrl + "/reset-password?token=" + token;
-        String subject = "Reset your password — LibraryOS";
+        String subject = "Reset your password — LibraFlow";
         String body = """
                 <html>
                 <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 20px;">

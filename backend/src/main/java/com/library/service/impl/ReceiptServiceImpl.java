@@ -53,7 +53,7 @@ public class ReceiptServiceImpl implements ReceiptService {
             PdfWriter.getInstance(document, out);
             document.open();
 
-            Paragraph title = new Paragraph("LibraryOS", TITLE);
+            Paragraph title = new Paragraph("LibraFlow", TITLE);
             title.setSpacingAfter(2f);
             document.add(title);
 

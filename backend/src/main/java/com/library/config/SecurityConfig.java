@@ -31,7 +31,11 @@ import org.springframework.security.oauth2.client.registration.ClientRegistratio
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
+import org.springframework.beans.factory.annotation.Value;
 import com.library.security.OAuth2LoginSuccessHandler;
 
 @Configuration
@@ -54,6 +58,12 @@ public class SecurityConfig {
     @Autowired(required = false)
     private ClientRegistrationRepository clientRegistrationRepository;
 
+    @Value("${app.frontend-url:http://localhost:3000}")
+    private String frontendUrl;
+
+    @Value("${app.cors.allowed-origins:}")
+    private String extraAllowedOrigins;
+
     public SecurityConfig(@Lazy JwtAuthenticationFilter jwtAuthFilter,
                           JwtAuthEntryPoint jwtAuthEntryPoint,
                           JwtAccessDeniedHandler jwtAccessDeniedHandler,
@@ -67,6 +77,8 @@ public class SecurityConfig {
     private static final String[] PUBLIC_URLS = {
             "/api/v1/auth/**",
             "/api/v1/health",
+            "/actuator/health",
+            "/actuator/health/**",
             "/swagger-ui/**",
             "/swagger-ui.html",
             "/api-docs/**",
@@ -109,6 +121,10 @@ public class SecurityConfig {
         if (clientRegistrationRepository != null && oAuth2LoginSuccessHandler != null) {
             http.oauth2Login(oauth2 -> oauth2
                 .successHandler(oAuth2LoginSuccessHandler)
+                // Default failure URL is /login?error on the *backend*; send the user
+                // back to the frontend login page with a flag it can show instead.
+                .failureHandler((req, res, ex) ->
+                        res.sendRedirect(frontendUrl + "/login?oauth_error=1"))
             );
         }
 
@@ -147,16 +163,20 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
-        // Allow both localhost (development) and Vercel (production)
-        // NOTE: When allowCredentials is true, you CANNOT use wildcards like "https://*.vercel.app"
-        // You must specify exact origins. Add your specific Vercel URL here.
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:3000",
-                "https://library-management-system-psi-blue.vercel.app",
-                "https://library-management-system-bd4s.vercel.app",
-                "https://library-management-system-46sl.vercel.app"
-        ));
+
+        // The browser normally reaches the API same-origin through the Next.js
+        // proxy, so CORS only matters for direct cross-origin callers. Origins are
+        // configuration, not code: FRONTEND_URL is always allowed, plus any extra
+        // comma-separated CORS_ALLOWED_ORIGINS. (With allowCredentials=true the
+        // spec forbids wildcards, so these must be exact origins.)
+        Set<String> origins = new LinkedHashSet<>();
+        origins.add(stripTrailingSlash(frontendUrl));
+        Arrays.stream(extraAllowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(SecurityConfig::stripTrailingSlash)
+                .forEach(origins::add);
+        configuration.setAllowedOrigins(List.copyOf(origins));
         
         // Allow all standard HTTP methods including OPTIONS for preflight
         configuration.setAllowedMethods(Arrays.asList(
@@ -182,5 +202,9 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
+    }
+
+    private static String stripTrailingSlash(String origin) {
+        return origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin;
     }
 }

@@ -13,11 +13,15 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -30,6 +34,18 @@ public class AuthController {
     private final PasswordResetService      passwordResetService;
     private final EmailVerificationService  emailVerificationService;
     private final RefreshTokenCookieFactory refreshCookieFactory;
+    /** Present only when Google credentials are configured (see GoogleOAuth2Config). */
+    private final ObjectProvider<ClientRegistrationRepository> clientRegistrations;
+
+    @GetMapping("/providers")
+    @Operation(summary = "Available login providers",
+               description = "Tells the UI which sign-in options are enabled on this deployment, "
+                       + "so it can hide the Google button when OAuth isn't configured.")
+    public ResponseEntity<ApiResponse<Map<String, Boolean>>> providers() {
+        boolean google = clientRegistrations.getIfAvailable() != null;
+        return ResponseEntity.ok(ApiResponse.success("Login providers",
+                Map.of("password", true, "google", google)));
+    }
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user",
