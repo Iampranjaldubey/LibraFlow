@@ -1,11 +1,11 @@
-# 📚 LibraryOS — Full-Stack Library Platform
+# 📚 LibraFlow — Full-Stack Library Platform
 
-Concurrency-safe book circulation with JWT + Google OAuth2 auth, refresh-token rotation, and a
-one-command Docker stack. Spring Boot 3 + MySQL on the back, Next.js 16 +
-TypeScript on the front.
+Concurrency-safe book circulation with JWT + optional Google OAuth2, refresh-token
+rotation with reuse detection, rate-limited auth, and a one-command production
+Docker stack. Spring Boot 3 + MySQL on the back, Next.js 16 + TypeScript on the front.
 
-[![CI](https://github.com/Iampranjaldubey/Library-management-system/actions/workflows/ci.yml/badge.svg)](https://github.com/Iampranjaldubey/Library-management-system/actions/workflows/ci.yml)
-![Coverage](https://img.shields.io/badge/backend%20coverage-~66%25-brightgreen)
+[![CI](https://github.com/Iampranjaldubey/LibraFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/Iampranjaldubey/LibraFlow/actions/workflows/ci.yml)
+![Coverage](https://img.shields.io/badge/backend%20coverage-61%25-yellowgreen)
 ![Java](https://img.shields.io/badge/Java-17-orange)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-6DB33F)
 ![Next.js](https://img.shields.io/badge/Next.js-16-black)
@@ -14,30 +14,33 @@ TypeScript on the front.
 
 ---
 
-## 🌐 Live Demo
-
-- **Frontend**: https://library-management-system-46sl.vercel.app
-- **Backend API**: self-hostable in minutes — see [Deploy for free](#-deploy-for-free-render--aiven). _(The prior Railway free instance was retired when Railway ended its free plan.)_
-
-> **Demo login** — Admin: `pranjal@gmail.com` / `123456`
-
-### Or run the whole stack in one command
+## 🚀 Run it (one command)
 
 ```bash
 docker compose up --build
 ```
 
-That's MySQL 8 + the Spring Boot API (Flyway-migrated, healthchecked). Swagger at
-http://localhost:8080/swagger-ui.html. Then start the frontend with
-`cd frontend && pnpm install && pnpm dev` (http://localhost:3000).
+Starts **MySQL 8 → Spring Boot API → Next.js UI**, each gated on the previous one's
+healthcheck, with demo data seeded.
+
+| | |
+|---|---|
+| App | http://localhost:3000 |
+| API docs (Swagger) | http://localhost:8080/swagger-ui.html |
+| Admin | `admin@libraflow.dev` / `LibraFlow@2026` |
+| Librarian | `librarian@libraflow.dev` / `LibraFlow@2026` |
+| Member | `member@libraflow.dev` / `LibraFlow@2026` |
+
+Only Docker is required. Optional overrides: `cp .env.example .env`.
+
+**Deploying for free** (Aiven MySQL + Render API + Vercel web): see
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ---
 
 ## 🧩 Engineering Highlights
 
-The parts worth reading — each is small, tested, and defensible.
-
-### Concurrency-safe circulation (the headline)
+### Concurrency-safe circulation
 `issueBook` used to read → check availability → decrement → save with no locking,
 so two requests for the last copy could both succeed and over-issue a book. A
 [12-thread test](backend/src/test/java/com/library/service/TransactionConcurrencyTest.java)
@@ -46,73 +49,81 @@ a `@Version` column on `Book` (Flyway
 [V5](backend/src/main/resources/db/migration/V5__add_book_version_optimistic_lock.sql))
 turns the update into `... WHERE id = ? AND version = ?`, and
 [`issueBook`](backend/src/main/java/com/library/service/impl/TransactionServiceImpl.java)
-retries the loser in a fresh `REQUIRES_NEW` transaction with bounded backoff.
+retries the loser in a fresh `REQUIRES_NEW` transaction with jittered backoff.
 Rejected alternatives (pessimistic `SELECT ... FOR UPDATE`, atomic conditional
-`UPDATE`) are documented inline.
+`UPDATE`) and when each would win are documented inline. The same race is also
+tested against [real MySQL](backend/src/test/java/com/library/integration/TransactionConcurrencyMySQLTest.java).
 
-### Refresh-token rotation & Google OAuth2
-The system supports both traditional email/password and **Google OAuth2** logins.
-Regardless of the login method, the backend issues a stateless Access Token and a long-lived Refresh Token.
-The refresh token lives in an **HttpOnly, SameSite, Secure-configurable cookie**
-(never in the JSON body or `localStorage`, so XSS can't read it). Every `/refresh`
-[rotates](backend/src/main/java/com/library/service/impl/RefreshTokenServiceImpl.java)
-the token; replaying a rotated token is detected as **reuse** and revokes the
-user's entire token family. The Next.js app puts the API behind a **same-origin
-proxy** so the cookie is first-party. Full flow is
-[integration-tested](backend/src/test/java/com/library/controller/AuthRefreshTokenFlowTest.java).
+### Token security
+- Short-lived access JWT (15 min); the refresh token lives **only** in an
+  `HttpOnly` cookie scoped to `/api/v1/auth` — never in JSON or `localStorage`.
+- Every `/refresh` [rotates](backend/src/main/java/com/library/service/impl/RefreshTokenServiceImpl.java)
+  the token; replaying a rotated one is treated as theft and **revokes the whole family**.
+- The Next.js app is a **same-origin proxy (BFF)** for `/api`, `/oauth2` and
+  `/login/oauth2`, so the cookie is first-party (`SameSite=Lax`) and the browser
+  never talks to the API cross-origin.
+- **Google OAuth2 never puts tokens in URLs**: the success handler only sets the
+  cookie and redirects to `/oauth-callback`, which exchanges it via `POST /refresh`.
+  Google login is optional — it's registered only when credentials exist, and the
+  UI hides the button via `GET /api/v1/auth/providers`.
 
-### Testing against real MySQL, in CI
-Integration tests run the actual Flyway migrations against a
-[Testcontainers MySQL](backend/src/test/java/com/library/integration/) instance
-with `ddl-auto=validate`, proving the schema and JPA entities agree — something the
-H2 unit profile can't. [GitHub Actions](.github/workflows/ci.yml) runs the backend
-(`mvnw verify`, JaCoCo gate), the frontend (type-check + Vitest + build), and a
-Docker image build on every push.
+### Abuse protection
+[`RateLimitFilter`](backend/src/main/java/com/library/security/RateLimitFilter.java):
+per-IP, per-endpoint **token bucket** on login, register and password-reset routes
+(default burst 10, refill 10/min) → `429` + `Retry-After`. Token bucket rather than
+fixed window so a user's few typos are fine but there's no boundary double-burst.
+Memory is bounded (idle-bucket eviction + hard cap). Unit-tested with an injected
+clock and integration-tested through the real filter chain.
+
+### Testing against real infrastructure
+- **65 backend tests**: services (Mockito), HTTP contracts on a real embedded server
+  (401 vs 403, cookie flags, rotation/reuse), and **Testcontainers MySQL** running the
+  actual Flyway migrations with `ddl-auto=validate`.
+- **Frontend**: Vitest + Testing Library (auth context, hooks, OAuth flow).
+- **CI** ([ci.yml](.github/workflows/ci.yml)): backend `mvnw verify` with a JaCoCo gate,
+  frontend type-check/tests/build, then builds all three images, boots the stack with
+  `docker compose up --wait`, and runs an end-to-end smoke test (demo login through
+  the proxy, cookie rotation, seeded data, rate limiter returns 429).
 
 ### PDF receipts
-`GET /api/v1/transactions/{id}/receipt` streams a printable
-[OpenPDF receipt](backend/src/main/java/com/library/service/impl/ReceiptServiceImpl.java);
-the transactions UI downloads it as a blob.
+`GET /api/v1/transactions/{id}/receipt` streams an
+[OpenPDF receipt](backend/src/main/java/com/library/service/impl/ReceiptServiceImpl.java).
 
 ---
 
-## 📸 Screenshots
+## 🛡 Production readiness
 
-| Login | Dashboard | Transactions |
-|-------|-----------|--------------|
-| ![Login](screenshots/login.png) | ![Dashboard](screenshots/dashboard.png) | ![Transactions](screenshots/transactions.png) |
+| Concern | Implementation |
+|---|---|
+| Health | Actuator liveness + readiness (readiness includes DB); used by Docker `HEALTHCHECK`, compose `depends_on`, Render deploy gate |
+| Zero-downtime deploys | Readiness-gated traffic + `server.shutdown=graceful` (20 s drain); JVM is PID 1 via `exec` so it receives `SIGTERM` |
+| Containers | Multi-stage builds, non-root users, Next.js `standalone` output, container-aware heap (`MaxRAMPercentage`), `ExitOnOutOfMemoryError` |
+| Config | 12-factor: all secrets/env via environment; CORS origins from `FRONTEND_URL` + `CORS_ALLOWED_ORIGINS` (no hard-coded hosts) |
+| Schema | Flyway V1–V6, Hibernate `validate` only — no `ddl-auto=update` |
+| HTTP security | CSP, `X-Frame-Options: DENY`, `nosniff`, Referrer/Permissions-Policy, HSTS; no stack traces in error bodies |
+| Auth hardening | Rate limiting, refresh rotation + reuse detection, BCrypt, role checks at URL **and** method level, anti-enumeration on forgot-password |
+| Demo data | Idempotent seeder, off by default (`APP_DEMO_SEED`), fails fast on a weak password |
+
+### Known trade-offs
+- The rate limiter is **in-memory, per instance** — correct for one replica. Horizontal
+  scaling needs a shared store (Redis + Bucket4j) or an edge/WAF limiter.
+- Client IP comes from `X-Forwarded-For` behind the proxies, so the limiter is a
+  best-effort throttle, not an authentication control.
+- CSP allows `'unsafe-inline'` because Next.js injects inline bootstrap scripts; a
+  nonce-based CSP is the next step.
 
 ---
 
 ## 🛠 Tech Stack
 
-**Backend** — Java 17, Spring Boot 3.2, Spring Security 6 + JWT + Google OAuth2, Spring Data JPA,
-MySQL 8, Flyway migrations, OpenPDF, springdoc/OpenAPI, Maven (wrapper).
+**Backend** — Java 17, Spring Boot 3.2, Spring Security 6 (JWT + OAuth2 client),
+Spring Data JPA, MySQL 8, Flyway, Actuator, OpenPDF, springdoc/OpenAPI, Maven wrapper.
 
 **Frontend** — Next.js 16 (App Router) + React 19 + TypeScript, Tailwind CSS +
-shadcn/ui, React Context, native fetch.
+shadcn/ui, react-hook-form + zod, native fetch.
 
-**Testing / infra** — JUnit 5, Mockito, Testcontainers (MySQL), JaCoCo, Vitest +
-React Testing Library, Docker + Docker Compose, GitHub Actions CI, deployed on
-Railway (API) + Vercel (web).
-
----
-
-## 🏗 Architecture
-
-```
-┌──────────────────────┐   same-origin /api/*   ┌───────────────────────┐
-│   Next.js (Vercel)   │ ─────── proxy ───────► │  Spring Boot (Railway) │
-│   React 19 + TS      │                        │  Security 6 · JPA      │
-└──────────────────────┘                        └───────────┬───────────┘
-   access token: bearer header                              │ Flyway
-   refresh token: HttpOnly cookie                 ┌─────────▼───────────┐
-                                                  │   MySQL 8 (Railway)  │
-                                                  └─────────────────────┘
-```
-
-The frontend never calls the backend cross-origin: it hits `/api/*` on its own
-origin and Next proxies to the API, which keeps the refresh cookie first-party.
+**Testing / infra** — JUnit 5, Mockito, Testcontainers, JaCoCo, Vitest + Testing
+Library, Docker + Compose, GitHub Actions, Render + Vercel.
 
 ---
 
@@ -120,77 +131,48 @@ origin and Next proxies to the API, which keeps the refresh cookie first-party.
 
 | Method | Endpoint | Access |
 |--------|----------|--------|
-| POST | `/api/v1/auth/register`, `/login` | Public |
-| POST | `/api/v1/auth/refresh`, `/logout` | Cookie |
+| POST | `/api/v1/auth/register`, `/login` | Public (rate-limited) |
+| POST | `/api/v1/auth/refresh`, `/logout` | Refresh cookie |
+| GET | `/api/v1/auth/providers` | Public |
 | GET | `/api/v1/books`, `/books/{id}` | Authenticated |
 | POST/PUT/DELETE | `/api/v1/books`, `/books/{id}` | ADMIN, LIBRARIAN |
 | POST | `/api/v1/issue`, `/return` | ADMIN, LIBRARIAN |
 | GET | `/api/v1/transactions`, `/transactions/{id}/receipt` | ADMIN, LIBRARIAN |
+| GET | `/actuator/health/liveness`, `/readiness` | Public |
 
 Full contract in Swagger (`/swagger-ui.html`).
 
 ---
 
-## 🚀 Running Locally
-
-### One command (recommended)
-```bash
-docker compose up --build      # MySQL + backend
-cd frontend && pnpm install && pnpm dev
-```
-
-### Manual backend (JDK 17 + MySQL)
-```bash
-cd backend
-# Env: DB_URL, DB_USERNAME, DB_PASSWORD, JWT_SECRET (base64, >32 bytes)
-# Optional for OAuth: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-./mvnw spring-boot:run
-```
-Schema is managed by **Flyway** (`ddl-auto=validate`) — no `ddl-auto=update`.
-
----
-
-## 🚀 Deploy for free (Render + Aiven)
-
-The frontend runs on Vercel; the API is a Docker service and the DB is MySQL. A free setup:
-
-1. **Database — [Aiven for MySQL](https://aiven.io/free-mysql-database)** (free, no card). Create a MySQL service and note host/port/db/user/password. Your `DB_URL` is `jdbc:mysql://<host>:<port>/<database>?ssl-mode=REQUIRED`.
-2. **API — [Render](https://render.com) (Docker, free).** This repo ships a [`render.yaml`](render.yaml) blueprint: in Render, **New → Blueprint** and pick this repo. Set the prompted secrets — `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET` (`openssl rand -base64 48`), `FRONTEND_URL`, and optionally `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`. Flyway migrates on first boot; the health check is `/api/v1/health`. (Free services sleep after ~15 min idle and cold-start in ~1 min.)
-3. **Frontend — Vercel.** Add `BACKEND_API_URL` = your Render URL as a **Production** environment variable, then redeploy (Next bakes the proxy target at build time, so it must be set before the build). The app proxies `/api/*` same-origin (`next.config.mjs`), so the HttpOnly refresh cookie stays first-party across the Vercel → Render hop.
-4. Update the demo links above once the API URL is stable.
-
-Full env reference: [`backend/.env.example`](backend/.env.example).
-
----
-
-## ✅ Testing
+## 💻 Development
 
 ```bash
-# Backend: unit + integration + coverage gate (JaCoCo report at target/site/jacoco)
-cd backend && ./mvnw verify        # Testcontainers MySQL tests need Docker
+# DB + API in Docker, UI with hot reload
+docker compose up -d db backend
+cd frontend && pnpm install && pnpm dev          # http://localhost:3000
 
-# Frontend
-cd frontend && pnpm test:run
+# Tests
+cd backend && ./mvnw verify      # unit + integration + Testcontainers MySQL + coverage gate (needs Docker)
+cd frontend && pnpm type-check && pnpm test:run
 ```
 
-Backend instruction coverage is ~66%, gated in CI (JaCoCo, `mvnw verify`). Beyond the
-raw number, the meaningful coverage is the concurrency race, the auth/rotation/reuse
-flow, migration-vs-entity validation on real MySQL, the service layer (books, users,
-fines), and PDF generation. Load/Lighthouse harness lives in [`perf/`](perf/README.md).
+Env reference: [`.env.example`](.env.example) (compose) and
+[`backend/.env.example`](backend/.env.example) (hosted). Load/Lighthouse harness: [`perf/`](perf/README.md).
 
 ---
 
 ## 📁 Project Structure
 
 ```
-Library-management-system/
-├── backend/          Spring Boot API (controller/service/repository/entity/dto/security)
-│   └── src/main/resources/db/migration/   Flyway V1–V5
-├── frontend/         Next.js app (app/ components/ hooks/ lib/ context/ __tests__/)
-├── perf/             k6 load test + Lighthouse harness
+LibraFlow/
+├── backend/     Spring Boot API (controller/service/repository/entity/dto/security/config)
+│   └── src/main/resources/db/migration/   Flyway V1–V6
+├── frontend/    Next.js app (app/ components/ hooks/ lib/ context/ __tests__/)
+├── docs/        DEPLOYMENT.md
+├── perf/        k6 load test + Lighthouse harness
 ├── .github/workflows/ci.yml
 ├── docker-compose.yml
-└── screenshots/
+└── render.yaml
 ```
 
 ---
@@ -200,5 +182,3 @@ Library-management-system/
 **Pranjal Dubey** — B.Tech Computer Science, Sitare University
 
 [![GitHub](https://img.shields.io/badge/GitHub-Iampranjaldubey-black?logo=github)](https://github.com/Iampranjaldubey)
-
-*Built as a depth-over-breadth portfolio project — see [RESUME_PROJECT_PLAN.md](RESUME_PROJECT_PLAN.md).*
